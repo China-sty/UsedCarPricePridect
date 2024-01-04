@@ -3,14 +3,17 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
-from lightgbm import LGBMRegressor
+import lightgbm as lgb
 from scipy import stats
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 
-
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold, cross_val_score
+import warnings
 from sklearn.svm import SVR
+import logging
+
+warnings.filterwarnings('ignore')
 
 train_path = os.path.join(os.path.dirname(__file__), '../data/used_car_train_20200313.csv')
 test_path = os.path.join(os.path.dirname(__file__), '../data/used_car_testB_20200421.csv')
@@ -33,13 +36,14 @@ concat_data['creatDate_day'] = concat_data['creatDate'].dt.day
 concat_data['regDate_year'] = concat_data['regDate'].dt.year
 concat_data['regDate_month'] = concat_data['regDate'].dt.month
 concat_data['regDate_day'] = concat_data['regDate'].dt.day
-concat_data.drop(['regDate', 'creatDate','SaleID','seller','offerType','name'], axis=1, inplace=True)
+concat_data.drop(['regDate', 'creatDate', 'SaleID', 'seller', 'offerType', 'name'], axis=1, inplace=True)
 concat_data.replace('-', np.nan, inplace=True)
+concat_data['power'] = concat_data['power'].map(lambda x: 600 if x>600 else x)
 
 descrete_feature = []
 for column in concat_data.columns:
     if column not in ['price']:
-        if(concat_data[column].nunique()<100):
+        if (concat_data[column].nunique() < 100):
             descrete_feature.append(column)
             # print(concat_data[column].value_counts())
             # print("-----------------------------------")
@@ -69,21 +73,20 @@ search_columns = concat_data.columns.drop(descrete_feature).drop('price')
 num_rows = 4  # 行数
 num_cols = 5  # 列数
 
-# 设置子图的大小
-fig, axes = plt.subplots(num_rows, num_cols, figsize=(num_cols * 5, num_rows * 5))
-
-# 遍历每个属性，绘制直方图
-for i, column in enumerate(search_columns):
-    ax = axes[i] if num_rows == 1 else axes[i // num_cols, i % num_cols]
-    sns.histplot(data=concat_data, x=column, ax=ax)
-    ax.set_title(column)
-
-# 调整子图之间的间距
-plt.tight_layout()
-
-# 显示图形
-plt.show()
-
+# # 设置子图的大小
+# fig, axes = plt.subplots(num_rows, num_cols, figsize=(num_cols * 5, num_rows * 5))
+#
+# # 遍历每个属性，绘制直方图
+# for i, column in enumerate(search_columns):
+#     ax = axes[i] if num_rows == 1 else axes[i // num_cols, i % num_cols]
+#     sns.histplot(data=concat_data, x=column, ax=ax)
+#     ax.set_title(column)
+#
+# # 调整子图之间的间距
+# plt.tight_layout()
+#
+# # 显示图形
+# plt.show()
 
 data_with_label = concat_data[concat_data['price'].notnull()]
 # print(data_with_label.info())
@@ -105,7 +108,17 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 
 # rf_model = LinearRegression()
 # rf_model = RandomForestRegressor(n_estimators=100, max_depth=10, min_samples_split=5)
-# rf_model = LGBMRegressor(learning_rate = 0.01, n_estimators = 5000,num_leaves=1000, max_depth = 10, min_child_samples = 20, subsample = 0.8, colsample_bytree = 0.8, reg_alpha = 0.005, n_jobs = -1)
+
+model = lgb.LGBMRegressor(learning_rate = 0.01, n_estimators = 5000,num_leaves=1000, max_depth = 10, min_child_samples = 20, subsample = 0.8, colsample_bytree = 0.8, reg_alpha = 0.005, n_jobs = -1)
+# 创建K折交叉验证对象
+kfold = KFold(n_splits=5, shuffle=True, random_state=42)
+# 进行交叉验证并评估模型性能
+scores = cross_val_score(model, X, y, cv=kfold, scoring='neg_mean_absolute_error')
+
+# 打印每次交叉验证的得分
+for i, score in enumerate(scores):
+    print(f"Fold {i+1}: {-score}")
+
 # rf_model.fit(X_train, y_train)
 # y_pred = rf_model.predict(X_test)
 # mae = np.mean(abs(y_pred - y_test))
